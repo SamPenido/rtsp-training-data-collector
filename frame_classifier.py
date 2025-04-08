@@ -13,10 +13,13 @@ class FrameClassifier:
     Uses PIL for robust image loading and supports arrow key navigation.
     Only stores classification metadata in JSON without copying the actual image files.
     Supports reclassification of previously classified frames.
+    Includes NULL category and event phase subcategories (inicio, meio, fim).
+    Features an overlay-style UI for better image visibility.
     """
     
-    # Class categories with simplified naming (no accents, underscores)
+    # Main categories with simplified naming
     CATEGORIES = {
+        '0': 'null',
         '1': 'forno_enchendo',
         '2': 'sinterizacao_acontecendo',
         '3': 'despejo_acontecendo',
@@ -24,16 +27,23 @@ class FrameClassifier:
         '5': 'forno_vazio'
     }
     
+    # Subcategories for event phases
+    SUBCATEGORIES = {
+        'i': 'inicio',
+        'm': 'meio',
+        'f': 'fim'
+    }
+    
     # Define colors for better visibility
     COLORS = {
-        'bg': (30, 30, 30),         # Dark gray background
-        'header': (50, 200, 255),   # Blue headers
-        'text': (255, 255, 255),    # White text
-        'highlight': (0, 255, 255), # Yellow for highlights
-        'success': (50, 255, 50),   # Green for success
-        'warning': (50, 50, 255),   # Red for warnings
-        'info': (180, 180, 180),    # Light gray for info
-        'update': (255, 180, 0)     # Orange for updates/reclassifications
+        'bg': (20, 20, 20),           # Dark background
+        'header': (50, 200, 255),     # Blue headers
+        'text': (255, 255, 255),      # White text
+        'highlight': (0, 255, 255),   # Yellow for highlights
+        'success': (50, 255, 50),     # Green for success
+        'warning': (255, 50, 50),     # Red for warnings
+        'info': (180, 180, 180),      # Light gray for info
+        'subcategory': (255, 127, 0)  # Orange for subcategories
     }
     
     def __init__(self, frames_dir):
@@ -48,11 +58,29 @@ class FrameClassifier:
         self.frame_files = []
         self.classifications = {}
         self.json_file = "classifications.json"
-        self.stats = {cat: 0 for cat in self.CATEGORIES.values()}
+        
+        # Initialize stats - now with subcategories
+        self.stats = {}
+        for cat in self.CATEGORIES.values():
+            if cat == 'null':
+                # NULL category doesn't have subcategories
+                self.stats[cat] = 0
+            else:
+                # Other categories have subcategories
+                for subcat in self.SUBCATEGORIES.values():
+                    self.stats[f"{cat}_{subcat}"] = 0
+        
         self.suppress_warnings = True
         self.window_name = "Frame Classifier"
         self.window_width = 1280
-        self.window_height = 800
+        self.window_height = 720
+        
+        # Current subcategory selection (None until a subcategory is selected)
+        self.current_subcategory = None
+        
+        # UI control variables
+        self.show_help = False
+        self.show_stats = False
         
         # Load existing classifications if available
         self._load_classifications()
@@ -77,12 +105,17 @@ class FrameClassifier:
                 # Update stats
                 for info in self.classifications.values():
                     category = info.get("category_name")
-                    if category in self.stats:
+                    subcategory = info.get("subcategory_name", None)
+                    
+                    if category == "null":
                         self.stats[category] += 1
+                    elif subcategory and f"{category}_{subcategory}" in self.stats:
+                        self.stats[f"{category}_{subcategory}"] += 1
                         
                 print("Current classification stats:")
                 for cat, count in self.stats.items():
-                    print(f"  {cat}: {count} frames")
+                    if count > 0:
+                        print(f"  {cat}: {count} frames")
                     
             except Exception as e:
                 print(f"Error loading classifications: {e}")
@@ -136,7 +169,7 @@ class FrameClassifier:
             print(f"Error loading frame files: {e}")
             sys.exit(1)
     
-    def _classify_frame(self, frame_filename, category):
+    def _classify_frame(self, frame_filename, category, subcategory=None):
         """
         Classify a frame without copying it.
         Only stores metadata in the classifications dictionary.
@@ -144,31 +177,42 @@ class FrameClassifier:
         
         Args:
             frame_filename (str): Filename of the frame
-            category (str): Category ID ('1' to '5')
+            category (str): Category ID ('0' to '5')
+            subcategory (str, optional): Subcategory ID ('i', 'm', 'f')
         """
         if category not in self.CATEGORIES:
             print(f"Invalid category: {category}")
-            return
+            return False
+        
+        # For categories other than NULL (0), a subcategory is required
+        if category != '0' and subcategory not in self.SUBCATEGORIES:
+            print(f"Invalid subcategory: {subcategory}. For non-NULL categories, please select a subcategory (i, m, f).")
+            return False
             
         category_name = self.CATEGORIES[category]
+        subcategory_name = self.SUBCATEGORIES.get(subcategory) if subcategory else None
         source_path = os.path.join(self.frames_dir, frame_filename)
         
         # Check if this is a reclassification
         is_reclassification = frame_filename in self.classifications
         old_category_name = None
+        old_subcategory_name = None
         
         if is_reclassification:
             # Get the previous category to update stats
-            old_category_name = self.classifications[frame_filename]["category_name"]
+            old_category_name = self.classifications[frame_filename].get("category_name")
+            old_subcategory_name = self.classifications[frame_filename].get("subcategory_name")
             
-            # Only update if the category actually changed
-            if old_category_name == category_name:
-                print(f"Frame already classified as '{category_name}'. No changes made.")
-                return
+            # Only update if the classification actually changed
+            if old_category_name == category_name and old_subcategory_name == subcategory_name:
+                print(f"Frame already classified as '{category_name}'{f' ({subcategory_name})' if subcategory_name else ''}. No changes made.")
+                return False
                 
             # Decrement the count for the old category
-            if old_category_name in self.stats:
+            if old_category_name == "null":
                 self.stats[old_category_name] -= 1
+            elif old_subcategory_name and f"{old_category_name}_{old_subcategory_name}" in self.stats:
+                self.stats[f"{old_category_name}_{old_subcategory_name}"] -= 1
         
         # Extract frame metadata from filename
         match = re.match(r"round_(\d+)_(\d+)_(\d+)\.jpg", frame_filename)
@@ -187,8 +231,8 @@ class FrameClassifier:
             "timestamp": timestamp
         }
         
-        # Save the classification with metadata
-        self.classifications[frame_filename] = {
+        # Create classification data with or without subcategory
+        classification_data = {
             "category_id": category,
             "category_name": category_name,
             "original_path": source_path,
@@ -196,16 +240,42 @@ class FrameClassifier:
             "classified_at": datetime.now().isoformat()
         }
         
-        # Update stats for the new category
-        self.stats[category_name] += 1
+        # Add subcategory information if provided
+        if subcategory and subcategory_name:
+            classification_data["subcategory_id"] = subcategory
+            classification_data["subcategory_name"] = subcategory_name
         
-        if is_reclassification:
-            print(f"Reclassified from '{old_category_name}' to '{category_name}' (Total: {self.stats[category_name]})")
+        # Save the classification
+        self.classifications[frame_filename] = classification_data
+        
+        # Update stats for the new category
+        if category_name == "null":
+            self.stats[category_name] += 1
+            stat_key = category_name
         else:
-            print(f"Classified as: '{category_name}' (Total: {self.stats[category_name]})")
+            stat_key = f"{category_name}_{subcategory_name}"
+            self.stats[stat_key] += 1
+        
+        # Output classification information
+        if is_reclassification:
+            old_display = old_category_name
+            if old_subcategory_name and old_category_name != "null":
+                old_display = f"{old_category_name} ({old_subcategory_name})"
+                
+            new_display = category_name
+            if subcategory_name and category_name != "null":
+                new_display = f"{category_name} ({subcategory_name})"
+                
+            print(f"Reclassified from '{old_display}' to '{new_display}' (Total: {self.stats[stat_key]})")
+        else:
+            if category_name == "null":
+                print(f"Classified as: '{category_name}' (Total: {self.stats[stat_key]})")
+            else:
+                print(f"Classified as: '{category_name} ({subcategory_name})' (Total: {self.stats[stat_key]})")
         
         # Save classifications after each update
         self._save_classifications()
+        return True
     
     def _load_image_with_pil(self, image_path):
         """
@@ -232,11 +302,36 @@ class FrameClassifier:
                 print(f"PIL cannot load image: {e}")
             return None
             
-    def _draw_text_with_outline(self, img, text, position, font_scale=1.0, color=None, 
-                              thickness=2, outline_color=(0, 0, 0), 
-                              outline_thickness=4, font=cv2.FONT_HERSHEY_DUPLEX):
+    def _draw_semi_transparent_rect(self, img, start_point, end_point, color, alpha=0.7):
         """
-        Draw text with a thick outline for better visibility on any background.
+        Draw a semi-transparent rectangle on the image.
+        
+        Args:
+            img: Image to draw on
+            start_point: Top-left corner (x, y)
+            end_point: Bottom-right corner (x, y)
+            color: Rectangle color (B, G, R)
+            alpha: Transparency level (0.0 to 1.0)
+            
+        Returns:
+            Modified image
+        """
+        # Create a separate image for the overlay
+        overlay = img.copy()
+        
+        # Draw the filled rectangle on the overlay
+        cv2.rectangle(overlay, start_point, end_point, color, -1)
+        
+        # Blend the overlay with the original image
+        cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
+        
+        return img
+    
+    def _draw_text_with_shadow(self, img, text, position, font_scale=1.0, color=None, 
+                               thickness=1, shadow_color=(0, 0, 0), shadow_offset=2, 
+                               font=cv2.FONT_HERSHEY_SIMPLEX):
+        """
+        Draw text with a shadow for better visibility against any background.
         
         Args:
             img: Image to draw on
@@ -245,8 +340,8 @@ class FrameClassifier:
             font_scale: Font scale
             color: Text color
             thickness: Text thickness
-            outline_color: Color of the outline
-            outline_thickness: Thickness of the outline
+            shadow_color: Color of the shadow
+            shadow_offset: Shadow offset in pixels
             font: Font type
             
         Returns:
@@ -255,132 +350,309 @@ class FrameClassifier:
         if color is None:
             color = self.COLORS['text']
             
-        # Draw the outline
-        cv2.putText(img, text, position, font, font_scale, outline_color, outline_thickness)
+        # Draw the shadow
+        shadow_position = (position[0] + shadow_offset, position[1] + shadow_offset)
+        cv2.putText(img, text, shadow_position, font, font_scale, shadow_color, thickness+1)
         
-        # Draw the text on top of the outline
+        # Draw the text
         cv2.putText(img, text, position, font, font_scale, color, thickness)
         
         return img
             
-    def _create_status_panel(self, img, current_frame):
+    def _draw_overlay_ui(self, img, current_frame):
         """
-        Create a status panel with large, bold text for better visibility.
+        Draw minimalistic overlay UI on the image - simplified version.
+        Shows only essential information by default with access to more details via menus.
         
         Args:
-            img (numpy.ndarray): The image to display
-            current_frame (str): The filename of the current frame
+            img: Image to display
+            current_frame: The filename of the current frame
             
         Returns:
-            numpy.ndarray: The image with status panel
+            Image with overlay UI
         """
         if img is None:
             # Create a black placeholder image
-            img = np.zeros((480, 640, 3), dtype=np.uint8)
+            img = np.zeros((720, 1280, 3), dtype=np.uint8)
             
         # Get image dimensions
-        img_height, img_width = img.shape[:2]
+        h, w = img.shape[:2]
         
-        # Calculate panel dimensions
-        panel_height = 200  # Height of status panel
-        total_height = img_height + panel_height
+        # Create a copy of the image for overlay
+        display_img = img.copy()
         
-        # Create a new image with space for the panel
-        display_img = np.zeros((total_height, img_width, 3), dtype=np.uint8)
+        # --- MINIMAL UI ELEMENTS (Always visible) ---
         
-        # Set a dark gray background for the panel
-        display_img[0:panel_height, :] = self.COLORS['bg']
+        # Draw frame counter in top-left corner with semi-transparent background
+        frame_info = f"Frame: {self.current_index + 1}/{len(self.frame_files)}"
+        text_size = cv2.getTextSize(frame_info, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 1)[0]
         
-        # Copy the original image below the panel
-        display_img[panel_height:total_height, :] = img
-        
-        # Add a divider line
-        cv2.line(display_img, (0, panel_height), (img_width, panel_height), self.COLORS['highlight'], 2)
-        
-        # Frame information - large and prominent with outline
-        frame_info = f"Frame: {self.current_index + 1} / {len(self.frame_files)}"
-        self._draw_text_with_outline(
-            display_img, frame_info, (20, 40), 
-            font_scale=1.0, color=self.COLORS['header'], 
-            thickness=2, outline_thickness=4
+        self._draw_semi_transparent_rect(
+            display_img, 
+            (10, 10), 
+            (text_size[0] + 30, 35), 
+            (0, 0, 0), 
+            0.6
         )
         
-        # Add file info 
-        file_info = f"File: {current_frame}"
-        self._draw_text_with_outline(
-            display_img, file_info, (20, 80), 
-            font_scale=0.7, color=self.COLORS['info'], 
-            thickness=2, outline_thickness=3
+        self._draw_text_with_shadow(
+            display_img, 
+            frame_info, 
+            (15, 30), 
+            font_scale=0.7, 
+            color=self.COLORS['header']
         )
         
-        # Display classification status with bold text
+        # Draw simple category list at the top-right
+        # Create a background for all categories
+        category_width = 250
+        category_height = 35 + (6 * 20)  # Header + 6 categories
+        
+        self._draw_semi_transparent_rect(
+            display_img, 
+            (w - category_width - 10, 10), 
+            (w - 10, category_height), 
+            (0, 0, 0), 
+            0.6
+        )
+        
+        # Draw category header
+        self._draw_text_with_shadow(
+            display_img, 
+            "CATEGORIES:", 
+            (w - category_width, 30), 
+            font_scale=0.7, 
+            color=self.COLORS['highlight']
+        )
+        
+        # Draw each category (including NULL)
+        y_pos = 50
+        for key, category in self.CATEGORIES.items():
+            cat_text = f"{key}: {category}"
+            
+            # Check if this frame is classified with this category
+            is_highlighted = False
+            if current_frame in self.classifications:
+                if self.classifications[current_frame]["category_name"] == category:
+                    is_highlighted = True
+            
+            self._draw_text_with_shadow(
+                display_img, 
+                cat_text, 
+                (w - category_width, y_pos), 
+                font_scale=0.6, 
+                color=self.COLORS['success'] if is_highlighted else self.COLORS['text']
+            )
+            y_pos += 20
+        
+        # Draw controls hint in bottom-right
+        hint_text = "H: Help | S: Stats"
+        text_size = cv2.getTextSize(hint_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)[0]
+        
+        self._draw_semi_transparent_rect(
+            display_img, 
+            (w - text_size[0] - 20, h - 35), 
+            (w - 10, h - 10), 
+            (0, 0, 0), 
+            0.6
+        )
+        
+        self._draw_text_with_shadow(
+            display_img, 
+            hint_text, 
+            (w - text_size[0] - 15, h - 15), 
+            font_scale=0.6, 
+            color=self.COLORS['info']
+        )
+        
+        # Show current subcategory if one is selected
+        if self.current_subcategory:
+            subcat_text = f"Subcategory: {self.SUBCATEGORIES[self.current_subcategory]}"
+            text_size = cv2.getTextSize(subcat_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 1)[0]
+            
+            self._draw_semi_transparent_rect(
+                display_img, 
+                (10, h - 40), 
+                (text_size[0] + 30, h - 15), 
+                (0, 0, 0), 
+                0.6
+            )
+            
+            self._draw_text_with_shadow(
+                display_img, 
+                subcat_text, 
+                (15, h - 20), 
+                font_scale=0.7, 
+                color=self.COLORS['subcategory']
+            )
+        
+        # --- MODAL UI ELEMENTS (Only visible when requested) ---
+        
+        # Draw help overlay if requested
+        if self.show_help:
+            # Semi-transparent dark background
+            self._draw_semi_transparent_rect(
+                display_img, 
+                (int(w*0.1), int(h*0.1)), 
+                (int(w*0.9), int(h*0.9)), 
+                (0, 0, 0), 
+                0.85
+            )
+            
+            # Help content
+            help_title = "KEYBOARD CONTROLS"
+            self._draw_text_with_shadow(
+                display_img, 
+                help_title, 
+                (int(w*0.5 - len(help_title)*7), int(h*0.15)), 
+                font_scale=1.0, 
+                color=self.COLORS['highlight']
+            )
+            
+            commands = [
+                "◄ ► : Navigate frames",
+                "0: Classify as NULL (no event)",
+                "1-5: Classify into categories (requires subcategory)",
+                "I/M/F: Select subcategory (inicio/meio/fim)",
+                "H: Toggle this help screen",
+                "S: Toggle statistics view",
+                "7: Jump forward 10 frames",
+                "8: Jump forward 100 frames", 
+                "9: Jump forward 1000 frames",
+                "Q: Quit and save"
+            ]
+            
+            y_pos = int(h * 0.25)
+            for cmd in commands:
+                self._draw_text_with_shadow(
+                    display_img, 
+                    cmd, 
+                    (int(w*0.2), y_pos), 
+                    font_scale=0.7
+                )
+                y_pos += 35
+                
+            # Category reference
+            y_pos = int(h * 0.25)
+            for key, category in self.CATEGORIES.items():
+                cat_text = f"{key}: {category}"
+                self._draw_text_with_shadow(
+                    display_img, 
+                    cat_text, 
+                    (int(w*0.55), y_pos), 
+                    font_scale=0.7
+                )
+                y_pos += 35
+                
+            # Close instruction
+            close_text = "Press H again to close this help screen"
+            self._draw_text_with_shadow(
+                display_img, 
+                close_text, 
+                (int(w*0.5 - len(close_text)*4), int(h*0.85)), 
+                font_scale=0.6, 
+                color=self.COLORS['info']
+            )
+        
+        # Draw stats overlay if requested
+        elif self.show_stats:
+            # Semi-transparent dark background
+            self._draw_semi_transparent_rect(
+                display_img, 
+                (int(w*0.1), int(h*0.1)), 
+                (int(w*0.9), int(h*0.9)), 
+                (0, 0, 0), 
+                0.85
+            )
+            
+            # Stats content
+            stats_title = "CLASSIFICATION STATISTICS"
+            self._draw_text_with_shadow(
+                display_img, 
+                stats_title, 
+                (int(w*0.5 - len(stats_title)*7), int(h*0.15)), 
+                font_scale=1.0, 
+                color=self.COLORS['highlight']
+            )
+            
+            # Draw statistics for each category
+            y_pos = int(h * 0.25)
+            
+            # First NULL category
+            null_count = self.stats.get("null", 0)
+            null_text = f"NULL: {null_count} frames"
+            self._draw_text_with_shadow(
+                display_img, 
+                null_text, 
+                (int(w*0.3), y_pos), 
+                font_scale=0.8
+            )
+            y_pos += 50
+            
+            # Other categories with subcategories
+            for cat_id in ['1', '2', '3', '4', '5']:
+                cat_name = self.CATEGORIES[cat_id]
+                
+                # Calculate total for this category
+                cat_total = 0
+                for subcat in self.SUBCATEGORIES.values():
+                    cat_total += self.stats.get(f"{cat_name}_{subcat}", 0)
+                
+                # Category header with total count
+                self._draw_text_with_shadow(
+                    display_img, 
+                    f"{cat_id}: {cat_name} (Total: {cat_total})", 
+                    (int(w*0.3), y_pos), 
+                    font_scale=0.8
+                )
+                y_pos += 30
+                
+                # Subcategory breakdown
+                for subcat_id, subcat_name in self.SUBCATEGORIES.items():
+                    count = self.stats.get(f"{cat_name}_{subcat_name}", 0)
+                    self._draw_text_with_shadow(
+                        display_img, 
+                        f"  {subcat_name}: {count} frames", 
+                        (int(w*0.35), y_pos), 
+                        font_scale=0.7
+                    )
+                    y_pos += 25
+                
+                y_pos += 15
+                
+            # Total classified frames
+            total_classified = len(self.classifications)
+            total_frames = len(self.frame_files)
+            percent = (total_classified / total_frames * 100) if total_frames > 0 else 0
+            
+            total_text = f"Total: {total_classified}/{total_frames} frames classified ({percent:.1f}%)"
+            
+            self._draw_text_with_shadow(
+                display_img, 
+                total_text, 
+                (int(w*0.3), int(h*0.8)), 
+                font_scale=0.8, 
+                color=self.COLORS['header']
+            )
+            
+            # Close instruction
+            close_text = "Press S again to close this statistics view"
+            self._draw_text_with_shadow(
+                display_img, 
+                close_text, 
+                (int(w*0.5 - len(close_text)*4), int(h*0.85)), 
+                font_scale=0.6, 
+                color=self.COLORS['info']
+            )
+        
+        # If this frame is classified, show a small indicator
         if current_frame in self.classifications:
             cat_name = self.classifications[current_frame]["category_name"]
-            status_text = f"Status: Classified as '{cat_name}' (Press 1-5 to reclassify)"
-            status_color = self.COLORS['success']
-        else:
-            status_text = "Status: NOT CLASSIFIED"
-            status_color = self.COLORS['warning']
+            subcat_name = self.classifications[current_frame].get("subcategory_name", "")
             
-        self._draw_text_with_outline(
-            display_img, status_text, (20, 120), 
-            font_scale=0.9, color=status_color, 
-            thickness=2, outline_thickness=4
-        )
-        
-        # Draw a background rectangle for controls to improve visibility
-        controls_bg_start = (10, 145)
-        controls_bg_end = (img_width // 2 - 50, 195)
-        cv2.rectangle(display_img, controls_bg_start, controls_bg_end, (0, 0, 0), -1)
-        cv2.rectangle(display_img, controls_bg_start, controls_bg_end, self.COLORS['highlight'], 1)
-        
-        # Display keyboard instructions
-        instructions_text = "CONTROLS:"
-        self._draw_text_with_outline(
-            display_img, instructions_text, (20, 165), 
-            font_scale=0.8, color=self.COLORS['highlight'], 
-            thickness=2, outline_thickness=3
-        )
-        
-        # Display navigation controls with bold outlined text
-        nav_text = "◄ ► : Navigate | 7:+10 | 8:+100 | 9:+1000 | Q:Quit"
-        self._draw_text_with_outline(
-            display_img, nav_text, (20, 190), 
-            font_scale=0.7, color=self.COLORS['text'], 
-            thickness=2, outline_thickness=3
-        )
-        
-        # Category information - right side with background
-        cat_bg_start = (img_width // 2, 10)
-        cat_bg_end = (img_width - 10, panel_height - 10)
-        cv2.rectangle(display_img, cat_bg_start, cat_bg_end, (0, 0, 0), -1)
-        cv2.rectangle(display_img, cat_bg_start, cat_bg_end, self.COLORS['highlight'], 1)
-        
-        # Categories header
-        cat_header_text = "CATEGORIES:"
-        self._draw_text_with_outline(
-            display_img, cat_header_text, (img_width // 2 + 15, 35), 
-            font_scale=0.8, color=self.COLORS['highlight'], 
-            thickness=2, outline_thickness=3
-        )
-        
-        # List all categories with bold outlined text
-        y_pos = 65
-        for key, category in self.CATEGORIES.items():
-            count = self.stats[category]
-            cat_text = f"{key}: {category} ({count})"
-            
-            # Highlight the current category if frame is classified
-            highlight_color = self.COLORS['text']
-            if current_frame in self.classifications and self.classifications[current_frame]["category_name"] == category:
-                highlight_color = self.COLORS['success']
-                
-            self._draw_text_with_outline(
-                display_img, cat_text, (img_width // 2 + 20, y_pos), 
-                font_scale=0.7, color=highlight_color, 
-                thickness=2, outline_thickness=3
-            )
-            y_pos += 25
+            # Just a small dot indicator in top-center of screen
+            indicator_color = self.COLORS['success']
+            cv2.circle(display_img, (w//2, 15), 8, indicator_color, -1)
         
         return display_img
     
@@ -391,15 +663,21 @@ class FrameClassifier:
         print("\n=== Frame Classification Tool ===")
         print("Keyboard Controls:")
         print("  ← → Arrow Keys: Navigate between frames")
-        print("  1-5: Classify frames into categories")
-        for key, category in self.CATEGORIES.items():
-            print(f"    {key} - {category}")
+        print("  0-5: Classify frames into categories")
+        print("    0 - null (no event)")
+        for key in ['1', '2', '3', '4', '5']:
+            print(f"    {key} - {self.CATEGORIES[key]}")
+        print("  I/M/F: Select subcategory (inicio/meio/fim) - required for categories 1-5")
+        print("  H: Toggle help screen")
+        print("  S: Toggle statistics view")
         print("  7: Advance 10 frames")
         print("  8: Advance 100 frames")
         print("  9: Advance 1000 frames")
         print("  Q: Quit")
         print("==================================\n")
-        print("Note: You can reclassify frames by pressing a different category key (1-5)\n")
+        print("Note: You can reclassify frames by pressing a different category key (0-5)\n")
+        print("Workflow: First select a subcategory (I/M/F), then press a category key (1-5).\n")
+        print("For NULL category (0), no subcategory selection is needed.\n")
         
         # Create window with specific size
         cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
@@ -418,7 +696,12 @@ class FrameClassifier:
             classification_info = ""
             if current_frame in self.classifications:
                 cat_name = self.classifications[current_frame]["category_name"]
-                classification_info = f" (Classified as: {cat_name})"
+                subcat_name = self.classifications[current_frame].get("subcategory_name", "")
+                
+                if cat_name == "null":
+                    classification_info = f" (Classified as: {cat_name})"
+                else:
+                    classification_info = f" (Classified as: {cat_name} - {subcat_name})"
             
             # Display minimal frame info in console
             print(f"Frame {self.current_index + 1}/{len(self.frame_files)}: {current_frame}{classification_info}")
@@ -426,8 +709,8 @@ class FrameClassifier:
             # Read and display the image using PIL
             img = self._load_image_with_pil(frame_path)
             
-            # Create status panel
-            display_img = self._create_status_panel(img, current_frame)
+            # Create overlay UI
+            display_img = self._draw_overlay_ui(img, current_frame)
             
             # Show the image
             cv2.imshow(self.window_name, display_img)
@@ -444,14 +727,53 @@ class FrameClassifier:
             if key_lower == ord('q') or key_lower == ord('Q'):
                 print("Exiting...")
                 break
-            elif chr(key_lower) in self.CATEGORIES:
-                category = chr(key_lower)
-                was_classified = current_frame in self.classifications
-                self._classify_frame(current_frame, category)
                 
-                # Only advance if this was a new classification, not a reclassification
-                if not was_classified:
-                    self.current_index += 1
+            # Toggle help screen
+            elif key_lower in [ord('h'), ord('H')]:
+                self.show_help = not self.show_help
+                if self.show_help:
+                    self.show_stats = False  # Close stats if open
+                
+            # Toggle statistics screen
+            elif key_lower in [ord('s'), ord('S')]:
+                self.show_stats = not self.show_stats
+                if self.show_stats:
+                    self.show_help = False  # Close help if open
+                
+            # Subcategory selection (I, M, F keys)
+            elif key_lower in [ord('i'), ord('I')]:
+                self.current_subcategory = 'i'
+                print(f"Selected subcategory: {self.SUBCATEGORIES['i']} (inicio)")
+                
+            elif key_lower in [ord('m'), ord('M')]:
+                self.current_subcategory = 'm'
+                print(f"Selected subcategory: {self.SUBCATEGORIES['m']} (meio)")
+                
+            elif key_lower in [ord('f'), ord('F')]:
+                self.current_subcategory = 'f'
+                print(f"Selected subcategory: {self.SUBCATEGORIES['f']} (fim)")
+                
+            # Category selection (0-5 keys)
+            elif chr(key_lower) in self.CATEGORIES:
+# Only process if help/stats screens are not showing
+                if not self.show_help and not self.show_stats:
+                    category = chr(key_lower)
+                    was_classified = current_frame in self.classifications
+                    
+                    # For NULL (0) category, no subcategory needed
+                    if category == '0':
+                        if self._classify_frame(current_frame, category):
+                            if not was_classified:
+                                self.current_index += 1
+                    
+                    # For other categories (1-5), subcategory is required
+                    else:
+                        if self.current_subcategory:
+                            if self._classify_frame(current_frame, category, self.current_subcategory):
+                                if not was_classified:
+                                    self.current_index += 1
+                        else:
+                            print("Please select a subcategory first (I/M/F) for non-NULL categories.")
                 
             # Arrow keys - check for various codes they might generate
             elif key in [2555904, 65363, 83]:  # Right arrow key (Windows/Linux/Mac)
@@ -477,6 +799,10 @@ class FrameClassifier:
             else:
                 # For debugging unknown keys
                 print(f"Key pressed: {key}")
+            
+            # Ensure we don't go past the end of the list
+            if self.current_index >= len(self.frame_files):
+                self.current_index = len(self.frame_files) - 1
         
         cv2.destroyAllWindows()
         print("Classification complete.")
