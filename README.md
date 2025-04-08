@@ -68,6 +68,11 @@ python frame_collector.py
 - **Categorias e Subcategorias:** Suporte para categorias principais e subcategorias que detalham fases dos eventos.
 - **Interface Intuitiva:** Navegação por teclas, seleção rápida e feedback visual.
 - **Persistência e Reclassificação:** Mantém histórico completo e permite correções rápidas.
+- **Estrutura Modular:** O código do classificador foi dividido em módulos para melhor organização:
+  - `config.py`: Contém constantes como categorias, subcategorias, cores da interface e configurações padrão.
+  - `file_utils.py`: Agrupa funções para operações de arquivo, como carregar/salvar classificações (`classifications.json`), carregar a lista de arquivos de frames e carregar imagens individuais.
+  - `ui_utils.py`: Contém as funções responsáveis por desenhar a interface gráfica sobreposta na imagem (textos, retângulos, tela de ajuda, estatísticas).
+  - `frame_classifier.py`: O script principal que orquestra o processo, utilizando os módulos de configuração, utilitários de arquivo e de interface.
 
 ### Categorias e Subcategorias
 Categorias principais:
@@ -102,4 +107,3 @@ As classificações são armazenadas no arquivo:
 
 ## Licença
 Licença MIT
-
