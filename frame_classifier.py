@@ -12,6 +12,7 @@ class FrameClassifier:
     A tool for manually classifying frames saved from an RTSP stream into predefined categories.
     Uses PIL for robust image loading and supports arrow key navigation.
     Only stores classification metadata in JSON without copying the actual image files.
+    Supports reclassification of previously classified frames.
     """
     
     # Class categories with simplified naming (no accents, underscores)
@@ -31,7 +32,8 @@ class FrameClassifier:
         'highlight': (0, 255, 255), # Yellow for highlights
         'success': (50, 255, 50),   # Green for success
         'warning': (50, 50, 255),   # Red for warnings
-        'info': (180, 180, 180)     # Light gray for info
+        'info': (180, 180, 180),    # Light gray for info
+        'update': (255, 180, 0)     # Orange for updates/reclassifications
     }
     
     def __init__(self, frames_dir):
@@ -138,6 +140,7 @@ class FrameClassifier:
         """
         Classify a frame without copying it.
         Only stores metadata in the classifications dictionary.
+        If the frame was already classified, it's reclassified with the new category.
         
         Args:
             frame_filename (str): Filename of the frame
@@ -149,6 +152,23 @@ class FrameClassifier:
             
         category_name = self.CATEGORIES[category]
         source_path = os.path.join(self.frames_dir, frame_filename)
+        
+        # Check if this is a reclassification
+        is_reclassification = frame_filename in self.classifications
+        old_category_name = None
+        
+        if is_reclassification:
+            # Get the previous category to update stats
+            old_category_name = self.classifications[frame_filename]["category_name"]
+            
+            # Only update if the category actually changed
+            if old_category_name == category_name:
+                print(f"Frame already classified as '{category_name}'. No changes made.")
+                return
+                
+            # Decrement the count for the old category
+            if old_category_name in self.stats:
+                self.stats[old_category_name] -= 1
         
         # Extract frame metadata from filename
         match = re.match(r"round_(\d+)_(\d+)_(\d+)\.jpg", frame_filename)
@@ -176,10 +196,13 @@ class FrameClassifier:
             "classified_at": datetime.now().isoformat()
         }
         
-        # Update stats
+        # Update stats for the new category
         self.stats[category_name] += 1
         
-        print(f"Classified as: {category_name} (Total: {self.stats[category_name]})")
+        if is_reclassification:
+            print(f"Reclassified from '{old_category_name}' to '{category_name}' (Total: {self.stats[category_name]})")
+        else:
+            print(f"Classified as: '{category_name}' (Total: {self.stats[category_name]})")
         
         # Save classifications after each update
         self._save_classifications()
@@ -293,7 +316,7 @@ class FrameClassifier:
         # Display classification status with bold text
         if current_frame in self.classifications:
             cat_name = self.classifications[current_frame]["category_name"]
-            status_text = f"Status: Classified as '{cat_name}'"
+            status_text = f"Status: Classified as '{cat_name}' (Press 1-5 to reclassify)"
             status_color = self.COLORS['success']
         else:
             status_text = "Status: NOT CLASSIFIED"
@@ -346,9 +369,15 @@ class FrameClassifier:
         for key, category in self.CATEGORIES.items():
             count = self.stats[category]
             cat_text = f"{key}: {category} ({count})"
+            
+            # Highlight the current category if frame is classified
+            highlight_color = self.COLORS['text']
+            if current_frame in self.classifications and self.classifications[current_frame]["category_name"] == category:
+                highlight_color = self.COLORS['success']
+                
             self._draw_text_with_outline(
                 display_img, cat_text, (img_width // 2 + 20, y_pos), 
-                font_scale=0.7, color=self.COLORS['text'], 
+                font_scale=0.7, color=highlight_color, 
                 thickness=2, outline_thickness=3
             )
             y_pos += 25
@@ -370,6 +399,7 @@ class FrameClassifier:
         print("  9: Advance 1000 frames")
         print("  Q: Quit")
         print("==================================\n")
+        print("Note: You can reclassify frames by pressing a different category key (1-5)\n")
         
         # Create window with specific size
         cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
@@ -416,8 +446,13 @@ class FrameClassifier:
                 break
             elif chr(key_lower) in self.CATEGORIES:
                 category = chr(key_lower)
+                was_classified = current_frame in self.classifications
                 self._classify_frame(current_frame, category)
-                self.current_index += 1  # Move to next frame after classification
+                
+                # Only advance if this was a new classification, not a reclassification
+                if not was_classified:
+                    self.current_index += 1
+                
             # Arrow keys - check for various codes they might generate
             elif key in [2555904, 65363, 83]:  # Right arrow key (Windows/Linux/Mac)
                 self.current_index += 1
