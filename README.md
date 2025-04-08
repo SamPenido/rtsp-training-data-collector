@@ -1,187 +1,188 @@
 # RTSP Frame Capture and Classification for AI Training
 
-This project contains tools for connecting to RTSP camera streams to capture frames for computer vision and AI training. It includes a frame capture utility and a manual classification tool to organize datasets for machine learning.
+Este projeto contém ferramentas para conexão com streams de câmeras RTSP para capturar frames para visão computacional e treinamento de IA. Inclui uma utilidade de captura de frames e uma ferramenta de classificação manual para organizar conjuntos de dados para aprendizado de máquina.
 
-## Table of Contents
-- [Overview](#overview)
-- [Features](#features)
-- [Requirements](#requirements)
-- [Configuration](#configuration)
-- [Frame Capture](#frame-capture)
-  - [Execution](#execution)
-  - [Code Explanation](#code-explanation)
-    - [Environment and RTSP Connection](#environment-and-rtsp-connection)
-    - [Round Management](#round-management)
-    - [Frame Capture and Saving](#frame-capture-and-saving)
-    - [Metadata Logging](#metadata-logging)
-  - [Output File: `test_summary.log`](#output-file-test_summarylog)
-  - [Customization](#customization)
-- [Frame Classification](#frame-classification)
-  - [Features](#classification-features)
-  - [Categories](#categories)
-  - [Usage](#classification-usage)
-  - [Classification Workflow](#classification-workflow)
-  - [Output](#classification-output)
-- [License](#license)
+## Sumário
+- [Visão Geral](#visão-geral)
+- [Funcionalidades](#funcionalidades)
+- [Requisitos](#requisitos)
+- [Configuração](#configuração)
+- [Captura de Frames](#captura-de-frames)
+  - [Execução](#execução)
+  - [Explicação do Código](#explicação-do-código)
+    - [Variáveis de Ambiente e Conexão RTSP](#variáveis-de-ambiente-e-conexão-rtsp)
+    - [Gerenciamento de Rodadas](#gerenciamento-de-rodadas)
+    - [Captura e Salvamento de Frames](#captura-e-salvamento-de-frames)
+    - [Registro de Metadados](#registro-de-metadados)
+  - [Arquivo de Saída: `test_summary.log`](#arquivo-de-saída-test_summarylog)
+  - [Personalização](#personalização)
+- [Classificação de Frames](#classificação-de-frames)
+  - [Funcionalidades de Classificação](#funcionalidades-de-classificação)
+  - [Categorias](#categorias)
+  - [Uso](#uso)
+  - [Fluxo de Classificação](#fluxo-de-classificação)
+  - [Saída](#saída)
+- [Licença](#licença)
 
-## Overview
-This project provides tools for building computer vision datasets from RTSP camera streams. It includes:
+## Visão Geral
+Este projeto fornece ferramentas para construir conjuntos de dados de visão computacional a partir de streams de câmeras RTSP. Inclui:
 
-1. **Frame Collector**: A script that connects to an RTSP camera stream, captures frames at specified intervals, and saves them as JPEG images.
-2. **Frame Classifier**: A tool for manually organizing captured frames into predefined categories, essential for preparing training data for AI models.
+1. **Coletor de Frames**: Um script que se conecta a um stream RTSP, captura frames em intervalos especificados e os salva como imagens JPEG.
+2. **Classificador de Frames**: Uma ferramenta para organizar manualmente os frames capturados em categorias predefinidas, essencial para preparar dados de treinamento para modelos de IA.
 
-Both tools work together to streamline the creation of labeled datasets for computer vision tasks.
+Ambas as ferramentas trabalham juntas para otimizar a criação de conjuntos de dados rotulados para tarefas de visão computacional.
 
-## Features
-- **Adjustable Capture Intervals:** Modify the time between frame captures.
-- **Adjustable JPEG Quality:** Configure the quality of saved JPEG images.
-- **Configurable Connection:** Easily adjust the RTSP connection parameters (username, password, IP, port, and stream path) via an environment file.
-- **Round-Based Data Management:** Automatically manages rounds of data capture with unique frame naming.
-- **Metadata Logging:** Detailed session logs are appended to `test_summary.log`.
-- **Manual Classification:** Intuitive interface for categorizing frames into predefined classes.
-- **Classification Tracking:** Saves classification data in JSON format and organizes images into category folders.
+## Funcionalidades
+- **Intervalos de Captura Ajustáveis:** Modifique o tempo entre capturas de frames.
+- **Qualidade JPEG Ajustável:** Configure a qualidade das imagens JPEG salvas.
+- **Conexão Configurável:** Ajuste facilmente os parâmetros de conexão RTSP (nome de usuário, senha, IP, porta e caminho do stream) através de um arquivo de ambiente.
+- **Gerenciamento de Dados por Rodadas:** Gerencia automaticamente rodadas de captura de dados com nomenclatura única para frames.
+- **Registro de Metadados:** Logs detalhados da sessão são anexados ao `test_summary.log`.
+- **Classificação Manual:** Interface intuitiva para categorizar frames em classes predefinidas.
+- **Rastreamento de Classificação:** Salva dados de classificação em formato JSON.
+- **Reclassificação:** Suporte para corrigir classificações anteriores com atualização automática de estatísticas.
 
-## Requirements
+## Requisitos
 - Python 3.x
 - [OpenCV](https://opencv.org/) (`cv2`)
 - [python-dotenv](https://pypi.org/project/python-dotenv/)
 - [NumPy](https://numpy.org/)
 - [PIL/Pillow](https://pillow.readthedocs.io/en/stable/)
-- Standard Python libraries: `os`, `re`, `time`, `shutil`, `datetime`, `json`, `sys`
+- Bibliotecas Python padrão: `os`, `re`, `time`, `shutil`, `datetime`, `json`, `sys`
 
-## Configuration
-1. **Install Dependencies:**
+## Configuração
+1. **Instalar Dependências:**
    ```bash
    pip install opencv-python python-dotenv pillow numpy
    ```
 
-2. **Create a .env File:**
-   In the project root, create a file named `.env` with the following variables:
+2. **Criar um Arquivo .env:**
+   Na raiz do projeto, crie um arquivo chamado `.env` com as seguintes variáveis:
    ```
-   CAMERA_USERNAME=your_username
-   CAMERA_PASSWORD=your_password
-   CAMERA_IP=your_camera_ip
-   CAMERA_PORT=your_camera_port
-   RTSP_STREAM_PATH=/path/to/stream
+   CAMERA_USERNAME=seu_usuario
+   CAMERA_PASSWORD=sua_senha
+   CAMERA_IP=ip_da_camera
+   CAMERA_PORT=porta_da_camera
+   RTSP_STREAM_PATH=/caminho/do/stream
    ```
-   Update these values to match your camera's settings.
+   Atualize esses valores para corresponder às configurações da sua câmera.
 
-## Frame Capture
+## Captura de Frames
 
-### Execution
-Run the capture script using:
+### Execução
+Execute o script de captura usando:
 ```bash
 python frame_collector.py
 ```
 
-The script will:
-- Connect to the RTSP stream.
-- Capture frames at the configured interval (default is one frame every 2 seconds).
-- Save the frames in the `rtsp_test_frames` directory.
-- Log session metadata to `test_summary.log`.
+O script irá:
+- Conectar-se ao stream RTSP.
+- Capturar frames no intervalo configurado (padrão é um frame a cada 2 segundos).
+- Salvar os frames no diretório `rtsp_test_frames`.
+- Registrar metadados da sessão em `test_summary.log`.
 
-### Code Explanation
+### Explicação do Código
 
-#### Environment and RTSP Connection
-- **Environment Variables:**
-  The script uses dotenv to load camera credentials and stream parameters from the `.env` file.
-- **RTSP URL Construction:**
-  It constructs the RTSP URL and masks sensitive information (e.g., the password) in console outputs.
+#### Variáveis de Ambiente e Conexão RTSP
+- **Variáveis de Ambiente:**
+  O script usa dotenv para carregar credenciais da câmera e parâmetros do stream do arquivo `.env`.
+- **Construção de URL RTSP:**
+  Ele constrói o URL RTSP e mascara informações sensíveis (por exemplo, a senha) nas saídas do console.
 
-#### Round Management
-- **Round ID Determination:**
-  The function `get_next_round_id()` determines the next round ID by:
-  - Reading the current round from `test_round_state.txt`.
-  - Scanning the image directory for existing rounds if the state file is missing or contains invalid data.
-- **State Update:**
-  After the capture session, the current round ID is saved back to `test_round_state.txt` for future runs.
+#### Gerenciamento de Rodadas
+- **Determinação do ID da Rodada:**
+  A função `get_next_round_id()` determina o próximo ID de rodada:
+  - Lendo a rodada atual de `test_round_state.txt`.
+  - Escaneando o diretório de imagens por rodadas existentes se o arquivo de estado estiver ausente ou contiver dados inválidos.
+- **Atualização de Estado:**
+  Após a sessão de captura, o ID da rodada atual é salvo de volta em `test_round_state.txt` para usos futuros.
 
-#### Frame Capture and Saving
-- **Connection to RTSP Stream:**
-  The script utilizes OpenCV's `cv2.VideoCapture` to connect to the RTSP stream.
-- **Capture Loop:**
-  It continuously reads frames for a configured duration (default is 1440 minutes or 24 hours). Frames are saved only if the defined interval (default 2 seconds) has elapsed.
-- **Saving Frames:**
-  Each frame is saved as a JPEG image using a filename format:
+#### Captura e Salvamento de Frames
+- **Conexão ao Stream RTSP:**
+  O script utiliza o `cv2.VideoCapture` do OpenCV para se conectar ao stream RTSP.
+- **Loop de Captura:**
+  Ele continuamente lê frames por uma duração configurada (padrão é 1440 minutos ou 24 horas). Frames são salvos apenas se o intervalo definido (padrão 2 segundos) tiver passado.
+- **Salvamento de Frames:**
+  Cada frame é salvo como uma imagem JPEG usando um formato de nome de arquivo:
   ```
   round_<round_id>_<frame_number>_<timestamp>.jpg
   ```
-  The JPEG quality is adjustable via the script parameters.
+  A qualidade JPEG é ajustável através dos parâmetros do script.
 
-#### Metadata Logging
-- **Statistics Calculation:**
-  After capturing, the script calculates the total number of frames saved, total storage size, and average size per frame.
-- **Log File:**
-  Metadata including start and end times, configured duration versus actual duration, capture interval, JPEG quality, and storage statistics is appended to `test_summary.log`.
+#### Registro de Metadados
+- **Cálculo de Estatísticas:**
+  Após a captura, o script calcula o número total de frames salvos, tamanho total de armazenamento e tamanho médio por frame.
+- **Arquivo de Log:**
+  Metadados incluindo horários de início e fim, duração configurada versus duração real, intervalo de captura, qualidade JPEG e estatísticas de armazenamento são anexados ao `test_summary.log`.
 
-### Output File: `test_summary.log`
-The `test_summary.log` file consolidates detailed session metadata, including:
-- **Session Timings:** Start and end times.
-- **Duration:** Configured test duration versus the actual runtime.
-- **Capture Parameters:** Capture interval and JPEG quality.
-- **Statistics:** Number of frames saved, total data size, and average size per frame.
+### Arquivo de Saída: `test_summary.log`
+O arquivo `test_summary.log` consolida metadados detalhados da sessão, incluindo:
+- **Tempo da Sessão:** Horários de início e fim.
+- **Duração:** Duração do teste configurada versus o tempo de execução real.
+- **Parâmetros de Captura:** Intervalo de captura e qualidade JPEG.
+- **Estatísticas:** Número de frames salvos, tamanho total de dados e tamanho médio por frame.
 
-This log is critical for analyzing the performance of each capture session and making adjustments for future runs.
+Este log é crítico para analisar o desempenho de cada sessão de captura e fazer ajustes para execuções futuras.
 
-### Customization
-The capture script allows you to easily modify key parameters:
-- **Capture Interval:** Change the time between frame captures.
-- **JPEG Quality:** Adjust the quality setting for JPEG image saving.
-- **RTSP Connection Parameters:** Update the `.env` file to modify connection details.
-- **Test Duration:** Set the overall runtime of the capture session.
+### Personalização
+O script de captura permite modificar facilmente parâmetros-chave:
+- **Intervalo de Captura:** Altere o tempo entre capturas de frames.
+- **Qualidade JPEG:** Ajuste a configuração de qualidade para o salvamento de imagens JPEG.
+- **Parâmetros de Conexão RTSP:** Atualize o arquivo `.env` para modificar detalhes de conexão.
+- **Duração do Teste:** Defina o tempo total de execução da sessão de captura.
 
-## Frame Classification
+## Classificação de Frames
 
-### Classification Features
-- **Intuitive UI:** Visual interface for efficient frame classification
-- **Keyboard Navigation:** Arrow keys for frame browsing and numeric keys for classification
-- **Batch Navigation:** Quickly jump ahead 10, 100, or 1000 frames
-- **Classification Persistence:** Progress is automatically saved to a JSON file
-- **Organized Output:** Classified frames are copied to category-specific directories
-- **Visual Feedback:** Status display shows classification progress and statistics
-- **Robust Image Loading:** Uses PIL for better handling of file paths and image formats
+### Funcionalidades de Classificação
+- **Interface de Usuário Intuitiva:** Interface visual para classificação eficiente de frames
+- **Navegação por Teclado:** Teclas de seta para navegar pelos frames e teclas numéricas para classificação
+- **Navegação em Lote:** Avance rapidamente 10, 100 ou 1000 frames
+- **Persistência de Classificação:** O progresso é automaticamente salvo em um arquivo JSON
+- **Feedback Visual:** O display de status mostra o progresso da classificação e estatísticas
+- **Carregamento Robusto de Imagens:** Usa PIL para melhor manipulação de caminhos de arquivo e formatos de imagem
+- **Reclassificação:** Suporte para corrigir classificações anteriores com atualização automática de estatísticas
 
-### Categories
-The classifier supports the following predefined categories:
-1. **forno_enchendo**: Furnace filling phase
-2. **sinterizacao_acontecendo**: Sintering process underway
-3. **despejo_acontecendo**: Dumping/discharge in progress
-4. **panela_voltando_posicao_normal**: Pan returning to normal position
-5. **forno_vazio**: Empty furnace
+### Categorias
+O classificador suporta as seguintes categorias predefinidas:
+1. **forno_enchendo**: Fase de enchimento do forno
+2. **sinterizacao_acontecendo**: Processo de sinterização em andamento
+3. **despejo_acontecendo**: Descarga/despejo em progresso
+4. **panela_voltando_posicao_normal**: Panela retornando à posição normal
+5. **forno_vazio**: Forno vazio
 
-### Usage
-Run the classification tool using:
+### Uso
+Execute a ferramenta de classificação usando:
 ```bash
 python frame_classifier.py
 ```
 
-Before running, update the `frames_directory` variable in the script to point to the directory containing your captured frames (default is the `rtsp_test_frames` directory).
+Antes de executar, atualize a variável `frames_directory` no script para apontar para o diretório contendo seus frames capturados (padrão é o diretório `rtsp_test_frames`).
 
-### Classification Workflow
-1. **Navigation:** Use arrow keys to browse through frames
-   - Left/Right arrows: Navigate one frame at a time
-   - Key 7: Jump ahead 10 frames
-   - Key 8: Jump ahead 100 frames
-   - Key 9: Jump ahead 1000 frames
-2. **Classification:** Press keys 1-5 to classify frames into their respective categories
-3. **Quitting:** Press 'Q' to save and exit
+### Fluxo de Classificação
+1. **Navegação:** Use as teclas de seta para navegar pelos frames
+   - Setas Esquerda/Direita: Navegue um frame por vez
+   - Tecla 7: Avance 10 frames
+   - Tecla 8: Avance 100 frames
+   - Tecla 9: Avance 1000 frames
+2. **Classificação:** Pressione as teclas 1-5 para classificar frames em suas respectivas categorias
+3. **Reclassificação:** Para corrigir uma classificação, basta pressionar uma tecla diferente (1-5) no mesmo frame
+4. **Saída:** Pressione 'Q' para salvar e sair
 
-The interface shows:
-- Current frame number and navigation status
-- Classification status of the current frame
-- Available categories with their current counts
-- Navigation controls
+A interface mostra:
+- Número do frame atual e status de navegação
+- Status de classificação do frame atual
+- Categorias disponíveis com suas contagens atuais
+- Controles de navegação
 
-### Classification Output
-The classifier produces two main outputs:
-1. **`classifications.json`**: A JSON file containing metadata for all classified frames
-2. **Categorized directories**: Inside the `amostras-classes` directory, frames are organized into subdirectories by category
+### Saída
+O classificador produz um arquivo JSON:
+- **`classifications.json`**: Um arquivo JSON contendo metadados para todos os frames classificados
 
-The JSON file includes detailed information for each classified frame:
-- Category ID and name
-- Original and classified file paths
-- Frame metadata (round ID, frame number, timestamp)
-- Classification timestamp
+O arquivo JSON inclui informações detalhadas para cada frame classificado:
+- ID e nome da categoria
+- Caminho original do arquivo
+- Metadados do frame (ID da rodada, número do frame, timestamp)
+- Timestamp da classificação
 
-## License
-MIT License
+## Licença
+Licença MIT
