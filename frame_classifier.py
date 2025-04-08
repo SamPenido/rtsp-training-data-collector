@@ -402,49 +402,50 @@ class FrameClassifier:
             font_scale=0.7, 
             color=self.COLORS['header']
         )
-        
-        # Draw simple category list at the top-right
-        # Create a background for all categories
-        category_width = 250
-        category_height = 35 + (6 * 20)  # Header + 6 categories
-        
+
+        # --- Category List (Moved to Top-Left below Frame Counter) ---
+        category_start_y = 45  # Start below the frame counter (which ends at y=35)
+        category_width = 250   # Adjust width as needed
+        category_height = 25 + (len(self.CATEGORIES) * 20) # Header + categories
+        category_start_x = 10
+
+        # Draw background for categories
         self._draw_semi_transparent_rect(
-            display_img, 
-            (w - category_width - 10, 10), 
-            (w - 10, category_height), 
-            (0, 0, 0), 
+            display_img,
+            (category_start_x, category_start_y),
+            (category_start_x + category_width, category_start_y + category_height),
+            (0, 0, 0),
             0.6
         )
-        
+
         # Draw category header
         self._draw_text_with_shadow(
-            display_img, 
-            "CATEGORIES:", 
-            (w - category_width, 30), 
-            font_scale=0.7, 
+            display_img,
+            "CATEGORIES:",
+            (category_start_x + 5, category_start_y + 20), # Position header inside the box
+            font_scale=0.7,
             color=self.COLORS['highlight']
         )
-        
+
         # Draw each category (including NULL)
-        y_pos = 50
+        y_pos = category_start_y + 40 # Start drawing categories below the header
         for key, category in self.CATEGORIES.items():
             cat_text = f"{key}: {category}"
-            
+
             # Check if this frame is classified with this category
             is_highlighted = False
             if current_frame in self.classifications:
                 if self.classifications[current_frame]["category_name"] == category:
                     is_highlighted = True
-            
             self._draw_text_with_shadow(
-                display_img, 
-                cat_text, 
-                (w - category_width, y_pos), 
-                font_scale=0.6, 
+                display_img,
+                cat_text,
+                (category_start_x + 5, y_pos), # Position categories inside the box
+                font_scale=0.6,
                 color=self.COLORS['success'] if is_highlighted else self.COLORS['text']
             )
             y_pos += 20
-        
+
         # Draw controls hint in bottom-right
         hint_text = "H: Help | S: Stats"
         text_size = cv2.getTextSize(hint_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)[0]
